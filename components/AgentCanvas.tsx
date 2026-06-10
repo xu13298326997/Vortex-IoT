@@ -38,6 +38,14 @@ import {
 
 const getId = () => `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
+interface TraditionalRule {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+  api: string;
+}
+
 // --- 自定义节点组件 ---
 function CustomNode({ id, data, isConnectable }: NodeProps) {
   const { deleteElements } = useReactFlow();
@@ -203,6 +211,8 @@ function DnDFlow() {
   const [workflowName, setWorkflowName] = useState<string>("");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [tempWorkflowName, setTempWorkflowName] = useState("");
+
+  const [rules, setRules] = useState<TraditionalRule[]>([]);
 
   const nodesRef = React.useRef(nodes);
   const edgesRef = React.useRef(edges);
@@ -388,6 +398,52 @@ function DnDFlow() {
 
             if (node.id === "start-node" || node.id === "end-node") {
               output = mergedPayload;
+            } else if (node.data.iconName === 'Cpu') {
+              // Traditional Code Node execution
+              const nodeRules = (node.data.rules as TraditionalRule[]) || [];
+
+              // Evaluate rules sequentially
+              let isMatched = false;
+
+              for (const rule of nodeRules) {
+                let isTriggered = false;
+                if (mergedPayload && typeof mergedPayload === 'object' && rule.field in mergedPayload) {
+                  const actualValue = mergedPayload[rule.field];
+                  const value = Number(rule.value) || rule.value;
+                  if (rule.operator === '>') isTriggered = Number(actualValue) > Number(value);
+                  else if (rule.operator === '<') isTriggered = Number(actualValue) < Number(value);
+                  else if (rule.operator === '==') isTriggered = actualValue == value;
+                }
+
+                if (isTriggered) {
+                  isMatched = true;
+                  if (rule.api && rule.api !== 'none') {
+                    addLog(`[INFO] 传统节点命中规则：[${rule.field}] [${rule.operator}] [${rule.value}]，正在调用对应报警接口: [${rule.api}]...`, 'success');
+                    try {
+                      const url = rule.api.split(' ')[1] || rule.api;
+                      // Mock request execution for UI display purposes
+                      await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(mergedPayload)
+                      }).catch(e => {
+                        addLog(`[WARN] 调用 ${url} 遇到网络错误，已忽略: ${e.message}`, 'error');
+                      });
+                    } catch (e: any) {
+                      addLog(`[ERROR] 执行 HTTP 调用异常: ${e.message}`, 'error');
+                    }
+                  } else {
+                    addLog(`[INFO] 传统节点命中规则：[${rule.field}] [${rule.operator}] [${rule.value}]，正常结束，无调用。`, 'info');
+                  }
+                  // Break the loop after the first match
+                  break;
+                }
+              }
+
+              if (!isMatched) {
+                addLog(`[INFO] 传统节点未命中任何规则，跳过调用流程。`, 'info');
+              }
+              output = mergedPayload; // pass data downstream
             } else {
               // AI Code Node
               const code = node.data.generatedCode as string;
@@ -461,6 +517,9 @@ function DnDFlow() {
       setTestResult(null);
       setIsTestLoading(false);
       setSelectedImage(null);
+
+      // Traditional node configs
+      setRules((activeNode.data.rules as TraditionalRule[]) || []);
     }
   }, [activeNode]);
 
@@ -546,7 +605,13 @@ function DnDFlow() {
       if (n.id === activeNode.id) {
         return {
           ...n,
-          data: { ...n.data, modelName, systemPrompt, generatedCode: localGeneratedCode }
+          data: {
+            ...n.data,
+            modelName,
+            systemPrompt,
+            generatedCode: localGeneratedCode,
+            rules
+          }
         };
       }
       return n;
@@ -820,8 +885,8 @@ function DnDFlow() {
             <div className="bg-zinc-900 border border-zinc-700 shadow-2xl rounded-2xl p-6 w-[400px] flex flex-col gap-4 animate-in fade-in zoom-in-95">
               <h3 className="text-lg font-semibold text-zinc-100">保存工作流</h3>
               <p className="text-sm text-zinc-400">请为当前的工作流拓扑设定一个易读的名称。</p>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={tempWorkflowName}
                 onChange={e => setTempWorkflowName(e.target.value)}
                 placeholder="例如：车间A能耗统计解析流"
@@ -834,13 +899,13 @@ function DnDFlow() {
                 }}
               />
               <div className="flex items-center justify-end gap-3 mt-2">
-                <button 
+                <button
                   onClick={() => setShowSaveDialog(false)}
                   className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
                 >
                   取消
                 </button>
-                <button 
+                <button
                   onClick={() => executeSave(tempWorkflowName.trim())}
                   disabled={!tempWorkflowName.trim() || isSaving}
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
@@ -883,7 +948,7 @@ function DnDFlow() {
                 </button>
               </div>
 
-              <div className="p-5 flex-1 overflow-y-auto">
+              <div className="p-5 pb-32 flex-1 overflow-y-auto">
                 {(activeNode.data.iconName === 'CloudLightning' || activeNode.data.iconName === 'Server') ? (
                   <div className="flex flex-col gap-5">
                     <div>
@@ -1041,9 +1106,87 @@ function DnDFlow() {
                     </div>
                   </div>
                 ) : activeNode.data.iconName === 'Cpu' ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-center bg-zinc-950/50 rounded-xl border border-zinc-800/50 p-6 shadow-inner">
-                    <Cpu className="w-8 h-8 text-blue-500 mb-3 opacity-80" />
-                    <p className="text-sm text-zinc-400 leading-relaxed">传统节点业务逻辑请前往后端对应 API 配置文件进行编辑。</p>
+                  <div className="flex flex-col gap-5">
+                    <div className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-800/60 shadow-inner">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+                          <Cpu className="w-4 h-4 text-blue-500" />
+                          多条件动态规则判断面板
+                        </h4>
+                        <button
+                          onClick={() => setRules([...rules, { id: getId(), field: '', operator: '>', value: '', api: 'none' }])}
+                          className="flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+                        >
+                          添加判断规则
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {rules.map((rule, idx) => (
+                          <div key={rule.id} className="bg-zinc-900/50 border border-zinc-700/50 rounded-lg p-3 flex flex-col gap-3 relative group">
+                            <button
+                              onClick={() => setRules(rules.filter(r => r.id !== rule.id))}
+                              className="absolute -top-2 -right-2 bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-red-400 hover:border-red-500/50 w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 shadow-lg z-10"
+                              title="删除此规则"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded flex-shrink-0">If #{idx + 1}</span>
+                              <input
+                                type="text"
+                                value={rule.field}
+                                onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, field: e.target.value } : r))}
+                                placeholder="字段名, 如 Temp"
+                                className="flex-1 min-w-0 w-1/3 bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600 shadow-sm"
+                              />
+                              <select
+                                value={rule.operator}
+                                onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, operator: e.target.value } : r))}
+                                className="flex-shrink-0 w-[50px] bg-zinc-900 border border-zinc-700/80 rounded-lg px-1 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all shadow-sm appearance-none text-center"
+                              >
+                                <option value=">">&gt;</option>
+                                <option value="<">&lt;</option>
+                                <option value="==">==</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={rule.value}
+                                onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, value: e.target.value } : r))}
+                                placeholder="对比数值"
+                                className="flex-1 min-w-0 w-1/3 bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600 shadow-sm"
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded flex-shrink-0">Do</span>
+                              <select
+                                value={rule.api}
+                                onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, api: e.target.value } : r))}
+                                className="flex-1 min-w-0 w-full bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all shadow-sm overflow-hidden text-ellipsis whitespace-nowrap"
+                              >
+                                <option value="none">正常结束，无外部调用</option>
+                                <option value="POST /api/v1/alarmA">触发报警 A 接口 (POST /api/v1/alarmA)</option>
+                                <option value="POST /api/v1/alarmB">触发报警 B 接口 (POST /api/v1/alarmB)</option>
+                              </select>
+                            </div>
+                          </div>
+                        ))}
+
+                        {rules.length === 0 && (
+                          <div className="py-6 text-center border-2 border-dashed border-zinc-800/50 rounded-xl">
+                            <p className="text-xs text-zinc-500">当前未配置任何规则，流经此节点的数据将不做处理直接传递</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={onSaveConfig}
+                      className="mt-2 w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98]"
+                    >
+                      保存配置
+                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-center bg-zinc-950/50 rounded-xl border border-zinc-800/50 p-6 shadow-inner">

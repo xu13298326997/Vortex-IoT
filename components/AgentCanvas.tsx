@@ -36,8 +36,7 @@ import {
   X
 } from "lucide-react";
 
-let idCounter = 0;
-const getId = () => `node_${idCounter++}`;
+const getId = () => `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
 // --- 自定义节点组件 ---
 function CustomNode({ id, data, isConnectable }: NodeProps) {
@@ -56,8 +55,17 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
   if (data.iconName === 'CloudLightning') iconColor = "text-purple-500";
   if (data.iconName === 'Server') iconColor = "text-orange-500";
 
+  let borderClass = data.colorClass || 'border-zinc-800';
+  if (data.executionState === 'executing') {
+    borderClass = 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse';
+  } else if (data.executionState === 'success') {
+    borderClass = 'border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]';
+  } else if (data.executionState === 'error') {
+    borderClass = 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse';
+  }
+
   return (
-    <div className={`bg-zinc-900 border ${data.colorClass || 'border-zinc-800'} text-zinc-100 rounded-xl shadow-lg min-w-[150px] group transition-all`}>
+    <div className={`bg-zinc-900 border ${borderClass} text-zinc-100 rounded-xl shadow-lg min-w-[150px] group transition-all duration-300`}>
       <Handle type="target" position={Position.Top} isConnectable={isConnectable} className="!w-3 !h-3 !bg-zinc-600 !border-2 !border-zinc-900" />
 
       <div className="px-4 py-3 flex items-center justify-between gap-4">
@@ -187,6 +195,263 @@ function DnDFlow() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isParsingImage, setIsParsingImage] = useState(false);
 
+  const [globalHex, setGlobalHex] = useState("01 03 00 00 00 01 84 0A");
+  const [isWorkflowRunning, setIsWorkflowRunning] = useState(false);
+  const [workflowLogs, setWorkflowLogs] = useState<{ id: string, message: string, type: 'info' | 'success' | 'error' }[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
+  const [workflowName, setWorkflowName] = useState<string>("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [tempWorkflowName, setTempWorkflowName] = useState("");
+
+  const nodesRef = React.useRef(nodes);
+  const edgesRef = React.useRef(edges);
+
+  React.useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
+
+  React.useEffect(() => {
+    const loadWorkflow = async (id: string | null) => {
+      if (!id) {
+        setNodes(initialNodes);
+        setEdges(initialEdges);
+        setCurrentWorkflowId(null);
+        setWorkflowName("");
+        return;
+      }
+      try {
+        const detailRes = await fetch(`/api/workflow/${id}`);
+        if (detailRes.ok) {
+          const data = await detailRes.json();
+          setCurrentWorkflowId(data.id);
+          setWorkflowName(data.name);
+          if (data.nodes && data.nodes !== '[]') {
+            const parsedNodes = JSON.parse(data.nodes);
+            if (parsedNodes.length > 0) {
+              setNodes(parsedNodes);
+              setEdges(JSON.parse(data.edges));
+            }
+          }
+        }
+      } catch (e) {
+        console.error("加载工作流失败", e);
+      }
+    };
+
+    const handleLoadWorkflow = (e: any) => {
+      loadWorkflow(e.detail);
+    };
+
+    window.addEventListener('load-workflow', handleLoadWorkflow);
+
+    // Initial load
+    fetch('/api/workflow')
+      .then(res => res.json())
+      .then(workflows => {
+        if (workflows && workflows.length > 0) {
+          loadWorkflow(workflows[0].id);
+        }
+      })
+      .catch(e => console.error(e));
+
+    return () => window.removeEventListener('load-workflow', handleLoadWorkflow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSaveClick = () => {
+    if (workflowName) {
+      executeSave(workflowName);
+    } else {
+      setTempWorkflowName("");
+      setShowSaveDialog(true);
+    }
+  };
+
+  const handleSaveClickRef = React.useRef(handleSaveClick);
+  React.useEffect(() => {
+    handleSaveClickRef.current = handleSaveClick;
+  }, [handleSaveClick]);
+
+  React.useEffect(() => {
+    const handleGlobalSave = () => {
+      handleSaveClickRef.current();
+    };
+    window.addEventListener('trigger-save-workflow', handleGlobalSave);
+    return () => window.removeEventListener('trigger-save-workflow', handleGlobalSave);
+  }, []);
+
+  const executeSave = async (nameToSave: string) => {
+
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentWorkflowId,
+          name: nameToSave,
+          nodes: nodesRef.current,
+          edges: edgesRef.current
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentWorkflowId(data.workflow.id);
+        setWorkflowName(nameToSave);
+        setWorkflowLogs([{ id: Date.now().toString(), message: `🎉 保存工作流 [${nameToSave}] 成功！拓扑与编译代码已持久化至 SQLite 数据库。`, type: 'success' }]);
+        setShowSaveDialog(false);
+        window.dispatchEvent(new Event('workflow-saved'));
+      } else {
+        throw new Error("接口返回错误");
+      }
+    } catch (e) {
+      console.error(e);
+      setWorkflowLogs([{ id: Date.now().toString(), message: "保存失败，请检查后端服务是否正常运行。", type: 'error' }]);
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setWorkflowLogs([]), 3000); // 3秒后清空提示
+    }
+  };
+
+  const runWorkflow = async () => {
+    if (isWorkflowRunning) return;
+    setIsWorkflowRunning(true);
+    setWorkflowLogs([]);
+
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    // 重置所有节点状态
+    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, executionState: 'idle' } })));
+
+    const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
+      setWorkflowLogs(prev => [...prev, { id: Date.now().toString() + Math.random(), message, type }]);
+    };
+
+    addLog(`[INFO] 开始工作流执行，初始报文: ${globalHex.trim()}`, 'info');
+
+    // 1. 构建邻接表和入度表
+    const adjList: Record<string, string[]> = {};
+    const inDegree: Record<string, number> = {};
+    currentNodes.forEach(n => {
+      adjList[n.id] = [];
+      inDegree[n.id] = 0;
+    });
+
+    currentEdges.forEach(e => {
+      if (adjList[e.source]) adjList[e.source].push(e.target);
+      if (inDegree[e.target] !== undefined) inDegree[e.target]++;
+    });
+
+    // 存储发往各个节点的数据队列
+    const inbox: Record<string, any[]> = {};
+    currentNodes.forEach(n => inbox[n.id] = []);
+
+    if (inbox["start-node"]) {
+      inbox["start-node"].push(globalHex.trim());
+    }
+
+    let queue = currentNodes.filter(n => inDegree[n.id] === 0);
+
+    try {
+      while (queue.length > 0) {
+        // 当前批次可以并行执行的节点
+        const batch = [...queue];
+        queue = [];
+
+        // 标记执行中状态
+        setNodes(nds => nds.map(n => batch.find(b => b.id === n.id) ? { ...n, data: { ...n.data, executionState: 'executing' } } : n));
+
+        addLog(`[INFO] 正在并行执行节点: ${batch.map(n => n.data.label || n.id).join(', ')}...`, 'info');
+
+        // 模拟执行延迟以供观察动画
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 批量执行
+        const results = await Promise.all(batch.map(async (node) => {
+          try {
+            let output: any = null;
+
+            // 数据合并（Merge）：如果上游有多个输入，将其 Object.assign 合并。若是字符串则默认取第一个
+            let mergedPayload: any = null;
+            const messages = inbox[node.id];
+
+            if (messages.length > 0) {
+              if (typeof messages[0] === 'string') {
+                mergedPayload = messages[0];
+              } else {
+                mergedPayload = Object.assign({}, ...messages);
+              }
+            }
+
+            if (node.id === "start-node" || node.id === "end-node") {
+              output = mergedPayload;
+            } else {
+              // AI Code Node
+              const code = node.data.generatedCode as string;
+              if (!code) {
+                throw new Error("节点未包含编译好的代码！");
+              }
+
+              const executableCode = `
+                ${code}
+                if (typeof parseProtocol !== 'function') {
+                   throw new Error("代码中没有名为 parseProtocol 的函数");
+                }
+                return parseProtocol(payload);
+              `;
+
+              const parserFn = new Function("payload", executableCode);
+              output = parserFn(mergedPayload);
+            }
+
+            return { nodeId: node.id, output, success: true };
+          } catch (e: any) {
+            return { nodeId: node.id, output: e.message || e, success: false };
+          }
+        }));
+
+        // 处理执行结果并分发
+        let hasError = false;
+        for (const res of results) {
+          if (!res.success) {
+            addLog(`[ERROR] 节点 ${res.nodeId} 执行异常: ${res.output}`, 'error');
+            setNodes(nds => nds.map(n => n.id === res.nodeId ? { ...n, data: { ...n.data, executionState: 'error' } } : n));
+            hasError = true;
+          } else {
+            setNodes(nds => nds.map(n => n.id === res.nodeId ? { ...n, data: { ...n.data, executionState: 'success' } } : n));
+            if (res.nodeId === "end-node") {
+              addLog(`[SUCCESS] 接收到最终合并结果:\n${JSON.stringify(res.output, null, 2)}`, 'success');
+            } else {
+              // 分发结果给子节点
+              const children = adjList[res.nodeId] || [];
+              for (const childId of children) {
+                inbox[childId].push(res.output);
+                inDegree[childId]--;
+                if (inDegree[childId] === 0) {
+                  const childNode = currentNodes.find(n => n.id === childId);
+                  if (childNode) queue.push(childNode);
+                }
+              }
+            }
+          }
+        }
+
+        if (hasError) {
+          addLog(`[ERROR] 遇到异常，工作流中断执行。`, 'error');
+          break;
+        }
+      }
+    } catch (e: any) {
+      addLog(`[ERROR] 引擎系统异常: ${e.message || e}`, 'error');
+    } finally {
+      setIsWorkflowRunning(false);
+      addLog(`[INFO] 工作流执行完毕。`, 'info');
+    }
+  };
+
   React.useEffect(() => {
     if (activeNode) {
       setModelName((activeNode.data.modelName as string) || "Gemini 2.5 Pro");
@@ -222,14 +487,14 @@ function DnDFlow() {
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
-      
+
       setLocalGeneratedCode("");
 
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        
+
         finalCode += chunk;
         setLocalGeneratedCode(prev => prev + chunk);
       }
@@ -242,10 +507,10 @@ function DnDFlow() {
         }
         return parseProtocol(hexString);
       `;
-      
+
       const parserFn = new Function("hexString", executableCode);
       const parsedResult = parserFn(hexInput);
-      
+
       setTestResult(JSON.stringify(parsedResult, null, 2));
 
     } catch (e: any) {
@@ -402,10 +667,10 @@ function DnDFlow() {
           if (targetEdgeId) break;
         }
       }
-      
+
       if (targetEdgeId) {
         const edge = edges.find(e => e.id === targetEdgeId);
-        
+
         if (edge) {
           // 删除旧的连线，并在这两个节点之间插入新的节点，生成两条新连线
           setEdges(eds => eds.filter(e => e.id !== targetEdgeId).concat([
@@ -493,16 +758,120 @@ function DnDFlow() {
           <Controls className="fill-zinc-400 border-zinc-800" />
         </ReactFlow>
 
+        {/* 全局工作流控制台 */}
+        <div className="absolute zIndex09 top-6 left-1/2 -translate-x-1/2 bg-zinc-900/80 backdrop-blur-xl border border-zinc-700/60 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 z-50 w-[600px] pointer-events-auto transition-all">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">全局输入测试报文 (Hex)</label>
+              <input
+                type="text"
+                value={globalHex}
+                onChange={e => setGlobalHex(e.target.value)}
+                placeholder="01 03 00 00 00 01 84 0A"
+                className="w-full bg-zinc-950/80 border border-zinc-700/80 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
+                disabled={isWorkflowRunning}
+              />
+            </div>
+            <div className="flex items-end gap-2 self-stretch pt-5">
+              <button
+                onClick={runWorkflow}
+                disabled={isWorkflowRunning || !globalHex.trim()}
+                className="h-full bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-medium text-sm transition-colors shadow flex items-center gap-2 disabled:opacity-50"
+              >
+                <Play className="w-4 h-4" />
+                运行工作流
+              </button>
+              <button
+                onClick={handleSaveClick}
+                disabled={isSaving}
+                className="h-full bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg font-medium text-sm transition-colors shadow flex items-center gap-2 disabled:opacity-50"
+                title="保存到SQLite数据库"
+              >
+                💾 {isSaving ? '保存中...' : '保存工作流'}
+              </button>
+              <button
+                onClick={() => {
+                  setWorkflowLogs([]);
+                  setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, executionState: 'idle' } })));
+                }}
+                disabled={isWorkflowRunning}
+                className="h-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 rounded-lg text-sm transition-colors shadow disabled:opacity-50"
+                title="清除状态和日志"
+              >
+                清除
+              </button>
+            </div>
+          </div>
+
+          {workflowLogs.length > 0 && (
+            <div className="mt-2 bg-zinc-950/90 border border-zinc-800 rounded-xl p-3 max-h-48 overflow-y-auto font-mono text-xs shadow-inner flex flex-col gap-2">
+              {workflowLogs.map(log => (
+                <div key={log.id} className={`${log.type === 'error' ? 'text-rose-400 font-semibold' : log.type === 'success' ? 'text-emerald-400' : 'text-zinc-400'} break-all whitespace-pre-wrap`}>
+                  {log.message}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 弹出保存框 */}
+        {showSaveDialog && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto">
+            <div className="bg-zinc-900 border border-zinc-700 shadow-2xl rounded-2xl p-6 w-[400px] flex flex-col gap-4 animate-in fade-in zoom-in-95">
+              <h3 className="text-lg font-semibold text-zinc-100">保存工作流</h3>
+              <p className="text-sm text-zinc-400">请为当前的工作流拓扑设定一个易读的名称。</p>
+              <input 
+                type="text" 
+                value={tempWorkflowName}
+                onChange={e => setTempWorkflowName(e.target.value)}
+                placeholder="例如：车间A能耗统计解析流"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50"
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && tempWorkflowName.trim()) {
+                    executeSave(tempWorkflowName.trim());
+                  }
+                }}
+              />
+              <div className="flex items-center justify-end gap-3 mt-2">
+                <button 
+                  onClick={() => setShowSaveDialog(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+                >
+                  取消
+                </button>
+                <button 
+                  onClick={() => executeSave(tempWorkflowName.trim())}
+                  disabled={!tempWorkflowName.trim() || isSaving}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+                >
+                  {isSaving ? '保存中...' : '确认保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 右侧抽屉面板 */}
         <div
           className={`absolute top-0 right-0 h-full w-[350px] bg-zinc-900 border-l border-zinc-800/80 shadow-2xl transition-transform duration-300 z-20 flex flex-col ${activeNode ? 'translate-x-0' : 'translate-x-full'}`}
+          style={{ zIndex: 99 }}
         >
           {activeNode && (
             <>
               <div className="flex items-center justify-between p-4 border-b border-zinc-800/80 bg-zinc-900/50 backdrop-blur-md">
                 <div>
                   <h3 className="font-semibold text-zinc-100 flex items-center gap-2">
-                    {activeNode.data.label as string}
+                    <input
+                      value={activeNode.data.label as string}
+                      onChange={(e) => {
+                        const newLabel = e.target.value;
+                        setActiveNode(prev => prev ? { ...prev, data: { ...prev.data, label: newLabel } } : null);
+                        setNodes(nds => nds.map(n => n.id === activeNode.id ? { ...n, data: { ...n.data, label: newLabel } } : n));
+                      }}
+                      className="bg-transparent border-b border-zinc-700/50 focus:border-blue-500 focus:outline-none text-zinc-100 placeholder-zinc-500 max-w-[200px] pb-0.5 transition-colors"
+                      placeholder="输入节点名称"
+                    />
                   </h3>
                   <p className="text-xs text-zinc-500 mt-1 font-mono">ID: {activeNode.id}</p>
                 </div>
@@ -536,9 +905,9 @@ function DnDFlow() {
                       <label className="block text-sm font-medium text-zinc-300 mb-2">协议图片智能导入</label>
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
-                          <input 
-                            type="file" 
-                            accept="image/*" 
+                          <input
+                            type="file"
+                            accept="image/*"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
@@ -604,12 +973,7 @@ function DnDFlow() {
                       />
                     </div>
 
-                    <button
-                      onClick={onSaveConfig}
-                      className="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98]"
-                    >
-                      保存配置
-                    </button>
+
 
                     {/* 新增的 LLM-Compiler 节点测试实验区 */}
                     <div className="mt-4 pt-6 border-t border-zinc-800/80">
@@ -620,7 +984,7 @@ function DnDFlow() {
 
                       <div className="mb-3">
                         <label className="block text-xs font-medium text-zinc-500 mb-2">动态生成的解析器代码 (JavaScript)</label>
-                        <textarea 
+                        <textarea
                           readOnly
                           value={localGeneratedCode}
                           placeholder="点击下方测试按钮，AI 将根据协议自动生成代码..."
@@ -668,6 +1032,12 @@ function DnDFlow() {
                           <Play className="w-4 h-4 ml-0.5" />
                         </button>
                       </div>
+                      <button
+                        onClick={onSaveConfig}
+                        className="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98]"
+                      >
+                        保存配置
+                      </button>
                     </div>
                   </div>
                 ) : activeNode.data.iconName === 'Cpu' ? (

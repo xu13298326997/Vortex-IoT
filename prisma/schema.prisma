@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Workflow {
+  id        String   @id @default(uuid())
+  name      String   @default("未命名工作流")
+  nodes     String   // JSON stringified ReactFlow nodes
+  edges     String   // JSON stringified ReactFlow edges
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

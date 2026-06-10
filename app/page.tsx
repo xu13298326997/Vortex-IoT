@@ -1,7 +1,39 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
 import AgentCanvas from "@/components/AgentCanvas";
-import { Bot, LayoutDashboard, Settings, Workflow, Plus, Search, Bell } from "lucide-react";
+import { Bot, LayoutDashboard, Settings, Workflow, Plus, Search, Bell, FileCode2 } from "lucide-react";
 
 export default function Home() {
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+
+  const fetchWorkflows = async () => {
+    try {
+      const res = await fetch('/api/workflow');
+      if (res.ok) {
+        const data = await res.json();
+        setWorkflows(data);
+        if (data.length > 0 && activeWorkflowId === null) {
+          setActiveWorkflowId(data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchWorkflows();
+    const handleWorkflowSaved = () => fetchWorkflows();
+    window.addEventListener('workflow-saved', handleWorkflowSaved);
+    return () => window.removeEventListener('workflow-saved', handleWorkflowSaved);
+  }, []);
+
+  const handleSelectWorkflow = (id: string | null) => {
+    setActiveWorkflowId(id);
+    window.dispatchEvent(new CustomEvent('load-workflow', { detail: id }));
+  };
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-50 font-sans overflow-hidden">
       {/* 侧边栏 */}
@@ -27,6 +59,37 @@ export default function Home() {
             <Settings className="w-4 h-4" />
             <span>设置 (Settings)</span>
           </button>
+
+          <div className="mt-8 mb-2 px-2 flex items-center justify-between">
+            <div className="text-xs font-semibold text-zinc-500 tracking-wider">已保存工作流</div>
+            <button 
+              onClick={() => handleSelectWorkflow(null)}
+              className="text-zinc-400 hover:text-emerald-400 transition-colors"
+              title="新建工作流"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-1">
+            {workflows.map(wf => (
+              <button
+                key={wf.id}
+                onClick={() => handleSelectWorkflow(wf.id)}
+                className={`flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
+                  activeWorkflowId === wf.id 
+                    ? 'bg-blue-500/10 text-blue-400 font-medium' 
+                    : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'
+                }`}
+              >
+                <FileCode2 className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{wf.name}</span>
+              </button>
+            ))}
+            {workflows.length === 0 && (
+              <div className="px-3 py-2 text-xs text-zinc-600 text-center">暂无保存的工作流</div>
+            )}
+          </div>
         </nav>
 
         <div className="p-4 border-t border-zinc-800/60">
@@ -68,7 +131,14 @@ export default function Home() {
             <button className="p-2 text-zinc-400 hover:text-zinc-50 rounded-full hover:bg-zinc-900 transition-colors">
               <Bell className="w-4 h-4" />
             </button>
-            <button className="flex items-center gap-2 bg-zinc-50 text-zinc-950 px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-zinc-200 transition-colors shadow-sm">
+            <button 
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('trigger-save-workflow'));
+                }
+              }}
+              className="flex items-center gap-2 bg-zinc-50 text-zinc-950 px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-zinc-200 transition-colors shadow-sm"
+            >
               <Plus className="w-4 h-4" />
               保存工作流
             </button>

@@ -25,7 +25,6 @@ import {
   EdgeLabelRenderer
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useChat } from "@ai-sdk/react";
 import {
   Play,
   SquareTerminal,
@@ -180,30 +179,68 @@ function DnDFlow() {
   const [modelName, setModelName] = useState("Gemini 2.5 Pro");
   const [systemPrompt, setSystemPrompt] = useState("");
 
+  const [testMessages, setTestMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [isTestLoading, setIsTestLoading] = useState(false);
 
-  const { messages, append, isLoading, setMessages } = useChat({
-    api: '/api/chat',
-    body: {
-      systemPrompt,
-      modelName,
-    },
-  });
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isParsingImage, setIsParsingImage] = useState(false);
 
   React.useEffect(() => {
     if (activeNode) {
       setModelName((activeNode.data.modelName as string) || "Gemini 2.5 Pro");
       setSystemPrompt((activeNode.data.systemPrompt as string) || "");
-      setMessages([]); // 切换节点时清空测试历史
+      setTestMessages([]); 
       setInputValue("");
+      setSelectedImage(null);
     }
-  }, [activeNode, setMessages]);
+  }, [activeNode]);
 
-  const handleTestSubmit = (e: React.FormEvent) => {
+  const handleTestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
-    append({ role: 'user', content: inputValue });
+    if (!inputValue.trim() || isTestLoading) return;
+
+    const userMsg = { id: Date.now().toString(), role: 'user', content: inputValue };
+    setTestMessages(prev => [...prev, userMsg]);
     setInputValue("");
+    setIsTestLoading(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [...testMessages, userMsg],
+          systemPrompt,
+          modelName,
+        })
+      });
+
+      if (!res.ok) throw new Error("API Request Failed");
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      const aiMsg = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
+      
+      setTestMessages(prev => [...prev, aiMsg]);
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        aiMsg.content += chunk;
+        setTestMessages(prev => {
+          const newMsgs = [...prev];
+          newMsgs[newMsgs.length - 1] = { ...aiMsg };
+          return newMsgs;
+        });
+      }
+    } catch (e) {
+      console.error("Test stream error:", e);
+    } finally {
+      setIsTestLoading(false);
+    }
   };
 
   const onSaveConfig = () => {
@@ -462,6 +499,69 @@ function DnDFlow() {
                         )}
                       </select>
                     </div>
+
+                    <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/60">
+                      <label className="block text-sm font-medium text-zinc-300 mb-2">协议图片智能导入</label>
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setSelectedImage(e.target?.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="block w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 transition-colors"
+                          />
+                        </div>
+                        {selectedImage && (
+                          <div className="relative">
+                            <img src={selectedImage} alt="Preview" className="max-h-32 object-contain rounded-lg border border-zinc-700/50" />
+                          </div>
+                        )}
+                        <button
+                          onClick={async () => {
+                            if (!selectedImage || isParsingImage) return;
+                            setIsParsingImage(true);
+                            try {
+                              const res = await fetch('/api/parse-protocol', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ imageBase64: selectedImage })
+                              });
+                              if (!res.ok) throw new Error("Parse failed");
+                              const data = await res.json();
+                              if (data.text) {
+                                setSystemPrompt(prev => prev ? prev + '\n\n' + data.text : data.text);
+                              }
+                            } catch (e) {
+                              console.error("Parse image error:", e);
+                              alert("图片解析失败，请检查控制台网络请求");
+                            } finally {
+                              setIsParsingImage(false);
+                            }
+                          }}
+                          disabled={!selectedImage || isParsingImage}
+                          className="flex items-center justify-center gap-2 w-full bg-indigo-600/90 hover:bg-indigo-500 text-white font-medium py-2 rounded-lg transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-sm active:scale-[0.98]"
+                        >
+                          {isParsingImage ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                              解析中...
+                            </>
+                          ) : (
+                            <>一键解析协议图</>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-zinc-300 mb-2">系统提示词 (System Prompt)</label>
                       <textarea
@@ -487,21 +587,21 @@ function DnDFlow() {
                       </h4>
 
                       <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3 h-48 overflow-y-auto mb-3 shadow-inner flex flex-col gap-3">
-                        {messages.length === 0 ? (
+                        {testMessages.length === 0 ? (
                           <div className="flex-1 flex items-center justify-center text-xs text-zinc-600 text-center px-4 leading-relaxed">
                             在此模拟用户输入，测试该节点的 System Prompt 实际效果...
                           </div>
                         ) : (
-                          messages.map(m => (
+                          testMessages.map(m => (
                             <div key={m.id} className={`text-sm ${m.role === 'user' ? 'text-blue-400 self-end bg-blue-500/10 px-3 py-2 rounded-lg max-w-[85%]' : 'text-zinc-300 self-start bg-zinc-800/50 px-3 py-2 rounded-lg max-w-[95%]'}`}>
                               <span className="font-semibold text-[10px] uppercase tracking-wider opacity-50 mb-1 block">
                                 {m.role === 'user' ? 'User' : 'AI'}
                               </span>
-                              <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                              <div className="whitespace-pre-wrap break-all leading-relaxed">{m.content}</div>
                             </div>
                           ))
                         )}
-                        {isLoading && (
+                        {isTestLoading && (
                           <div className="text-xs text-zinc-500 italic mt-1 self-start bg-zinc-800/30 px-3 py-2 rounded-lg animate-pulse">
                             大模型思考中...
                           </div>
@@ -515,11 +615,11 @@ function DnDFlow() {
                           onChange={(e) => setInputValue(e.target.value)}
                           placeholder="输入测试内容..."
                           className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
-                          disabled={isLoading}
+                          disabled={isTestLoading}
                         />
                         <button
                           type="submit"
-                          disabled={isLoading || !inputValue.trim()}
+                          disabled={isTestLoading || !inputValue.trim()}
                           className="bg-emerald-600/90 hover:bg-emerald-500 text-white p-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                           title="发送测试"
                         >

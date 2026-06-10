@@ -179,8 +179,9 @@ function DnDFlow() {
   const [modelName, setModelName] = useState("Gemini 2.5 Pro");
   const [systemPrompt, setSystemPrompt] = useState("");
 
-  const [testMessages, setTestMessages] = useState<any[]>([]);
-  const [inputValue, setInputValue] = useState("");
+  const [hexInput, setHexInput] = useState("");
+  const [localGeneratedCode, setLocalGeneratedCode] = useState("");
+  const [testResult, setTestResult] = useState<string | null>(null);
   const [isTestLoading, setIsTestLoading] = useState(false);
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -190,27 +191,28 @@ function DnDFlow() {
     if (activeNode) {
       setModelName((activeNode.data.modelName as string) || "Gemini 2.5 Pro");
       setSystemPrompt((activeNode.data.systemPrompt as string) || "");
-      setTestMessages([]); 
-      setInputValue("");
+      setLocalGeneratedCode((activeNode.data.generatedCode as string) || "");
+      setHexInput("");
+      setTestResult(null);
+      setIsTestLoading(false);
       setSelectedImage(null);
     }
   }, [activeNode]);
 
-  const handleTestSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isTestLoading) return;
+  const handleGenerateAndTest = async () => {
+    if (!hexInput.trim() || isTestLoading) return;
 
-    const userMsg = { id: Date.now().toString(), role: 'user', content: inputValue };
-    setTestMessages(prev => [...prev, userMsg]);
-    setInputValue("");
     setIsTestLoading(true);
+    setTestResult(null);
+    let finalCode = "";
 
     try {
+      // 1. 请求大模型生成代码
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...testMessages, userMsg],
+          messages: [{ role: 'user', content: "请根据系统提示词中的协议内容，直接生成纯净的JavaScript解析代码。" }],
           systemPrompt,
           modelName,
         })
@@ -220,26 +222,56 @@ function DnDFlow() {
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
-      const aiMsg = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
       
-      setTestMessages(prev => [...prev, aiMsg]);
+      setLocalGeneratedCode("");
 
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         
-        aiMsg.content += chunk;
-        setTestMessages(prev => {
-          const newMsgs = [...prev];
-          newMsgs[newMsgs.length - 1] = { ...aiMsg };
-          return newMsgs;
-        });
+        finalCode += chunk;
+        setLocalGeneratedCode(prev => prev + chunk);
       }
-    } catch (e) {
-      console.error("Test stream error:", e);
+
+      // 2. 动态执行生成的代码
+      const executableCode = `
+        ${finalCode}
+        if (typeof parseProtocol !== 'function') {
+           throw new Error("大模型没有按要求生成名为 parseProtocol 的函数");
+        }
+        return parseProtocol(hexString);
+      `;
+      
+      const parserFn = new Function("hexString", executableCode);
+      const parsedResult = parserFn(hexInput);
+      
+      setTestResult(JSON.stringify(parsedResult, null, 2));
+
+    } catch (e: any) {
+      console.error("Test stream/execution error:", e);
+      setTestResult("执行出错:\n" + String(e?.message || e));
     } finally {
       setIsTestLoading(false);
+    }
+  };
+
+  const handleRunLocalOnly = () => {
+    if (!hexInput.trim() || !localGeneratedCode) return;
+    try {
+      setTestResult(null);
+      const executableCode = `
+        ${localGeneratedCode}
+        if (typeof parseProtocol !== 'function') {
+           throw new Error("代码中没有名为 parseProtocol 的函数");
+        }
+        return parseProtocol(hexString);
+      `;
+      const parserFn = new Function("hexString", executableCode);
+      const parsedResult = parserFn(hexInput);
+      setTestResult(JSON.stringify(parsedResult, null, 2));
+    } catch (e: any) {
+      setTestResult("本地执行出错:\n" + String(e?.message || e));
     }
   };
 
@@ -249,7 +281,7 @@ function DnDFlow() {
       if (n.id === activeNode.id) {
         return {
           ...n,
-          data: { ...n.data, modelName, systemPrompt }
+          data: { ...n.data, modelName, systemPrompt, generatedCode: localGeneratedCode }
         };
       }
       return n;
@@ -579,53 +611,63 @@ function DnDFlow() {
                       保存配置
                     </button>
 
-                    {/* 新增的节点测试实验区 */}
+                    {/* 新增的 LLM-Compiler 节点测试实验区 */}
                     <div className="mt-4 pt-6 border-t border-zinc-800/80">
                       <h4 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
-                        <Play className="w-4 h-4 text-emerald-500" />
-                        测试此节点 (实验区)
+                        <Cpu className="w-4 h-4 text-emerald-500" />
+                        LLM-Compiler 动态编译解析 (实验区)
                       </h4>
 
-                      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3 h-48 overflow-y-auto mb-3 shadow-inner flex flex-col gap-3">
-                        {testMessages.length === 0 ? (
-                          <div className="flex-1 flex items-center justify-center text-xs text-zinc-600 text-center px-4 leading-relaxed">
-                            在此模拟用户输入，测试该节点的 System Prompt 实际效果...
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium text-zinc-500 mb-2">动态生成的解析器代码 (JavaScript)</label>
+                        <textarea 
+                          readOnly
+                          value={localGeneratedCode}
+                          placeholder="点击下方测试按钮，AI 将根据协议自动生成代码..."
+                          className="w-full h-32 bg-zinc-950/80 border border-zinc-800/80 rounded-xl px-3 py-3 text-xs text-zinc-300 font-mono focus:outline-none transition-all resize-none shadow-inner leading-relaxed"
+                        />
+                      </div>
+
+                      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3 h-32 overflow-y-auto mb-3 shadow-inner">
+                        {testResult === null ? (
+                          <div className="flex items-center justify-center h-full text-xs text-zinc-600 text-center px-4 leading-relaxed">
+                            等待运行结果...
                           </div>
                         ) : (
-                          testMessages.map(m => (
-                            <div key={m.id} className={`text-sm ${m.role === 'user' ? 'text-blue-400 self-end bg-blue-500/10 px-3 py-2 rounded-lg max-w-[85%]' : 'text-zinc-300 self-start bg-zinc-800/50 px-3 py-2 rounded-lg max-w-[95%]'}`}>
-                              <span className="font-semibold text-[10px] uppercase tracking-wider opacity-50 mb-1 block">
-                                {m.role === 'user' ? 'User' : 'AI'}
-                              </span>
-                              <div className="whitespace-pre-wrap break-all leading-relaxed">{m.content}</div>
-                            </div>
-                          ))
-                        )}
-                        {isTestLoading && (
-                          <div className="text-xs text-zinc-500 italic mt-1 self-start bg-zinc-800/30 px-3 py-2 rounded-lg animate-pulse">
-                            大模型思考中...
-                          </div>
+                          <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
+                            {testResult}
+                          </pre>
                         )}
                       </div>
 
-                      <form onSubmit={handleTestSubmit} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <input
                           type="text"
-                          value={inputValue}
-                          onChange={(e) => setInputValue(e.target.value)}
-                          placeholder="输入测试内容..."
+                          value={hexInput}
+                          onChange={(e) => setHexInput(e.target.value)}
+                          placeholder="输入测试的 16 进制报文 (例如: 01 03 00...)"
                           className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
                           disabled={isTestLoading}
                         />
                         <button
-                          type="submit"
-                          disabled={isTestLoading || !inputValue.trim()}
-                          className="bg-emerald-600/90 hover:bg-emerald-500 text-white p-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                          title="发送测试"
+                          type="button"
+                          onClick={handleGenerateAndTest}
+                          disabled={isTestLoading || !hexInput.trim() || !systemPrompt.trim()}
+                          className="bg-purple-600/90 hover:bg-purple-500 text-white px-3 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 text-xs font-medium"
+                          title="让AI生成代码并测试"
+                        >
+                          {isTestLoading ? '编译中...' : '生成并测试'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRunLocalOnly}
+                          disabled={isTestLoading || !hexInput.trim() || !localGeneratedCode}
+                          className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 text-xs font-medium"
+                          title="直接运行已有代码"
                         >
                           <Play className="w-4 h-4 ml-0.5" />
                         </button>
-                      </form>
+                      </div>
                     </div>
                   </div>
                 ) : activeNode.data.iconName === 'Cpu' ? (

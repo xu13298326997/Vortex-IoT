@@ -28,10 +28,24 @@ export async function POST(req: Request) {
     // 核心调用：使用 Vercel AI SDK 提供的标准流式处理
     const result = await streamText({
       model: google(aiModel),
-      system: (systemPrompt || "你是一个乐于助人的 AI 助手。") + "\n\n【系统强制指令】：请严格返回纯净的 JSON 格式数据。禁止输出任何 Markdown 格式的包裹符号（如 ```json ），禁止包含任何解释性文本或前后的客套话，确保输出的字符可以直接被 JSON.parse 解析。",
+      system: `你现在不是一个报文解析器，而是一个【JavaScript 代码编译器】。
+用户会给你一段 Markdown 格式的协议解析表。
+你必须编写并返回一段标准的、没有嵌套的 JavaScript 函数代码。函数签名必须为：
+function parseProtocol(hexString) {
+  // 你的解析逻辑，将 hexString 转换为对象
+  return resultObject;
+}
+
+【极其严格的铁律】：
+1. 不要返回任何 Markdown 标记（如 \`\`\`javascript ），不要返回任何解释性的中文。只允许返回合法的、可直接执行的 JavaScript 代码字符串。
+2. 必须首先处理传入的 hexString，去除其中的空格和换行（例如：hexString = hexString.replace(/\\s+/g, '')）。
+3. 如果使用 DataView 或 Buffer 提取字节，必须提前检查长度（byteLength），防止出现 "Offset is outside the bounds of the DataView" 等越界错误；若长度不足，应仅解析能解析的部分或将缺失字段置为 null。
+
+以下是用户的协议解析表：
+${systemPrompt}`,
       messages,
-      // 可以在这里额外配置温度等大模型参数
-      temperature: 0.7,
+      // 降低温度以确保代码生成的确定性
+      temperature: 0.1,
     });
 
     // 兼容所有版本的原生纯文本流返回方式

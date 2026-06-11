@@ -4,7 +4,8 @@
 > 
 > 下一代多模态 AI Agent 工作流编排与高频物联网执行平台
 
-![AI Agent Studio Cover](https://vortex-io-t.vercel.app/)
+
+在线地址访问:https://vortex-io-t.vercel.app/
 
 ## 🌟 Core Technical Highlights / 核心技术亮点
 

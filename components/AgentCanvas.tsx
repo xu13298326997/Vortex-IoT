@@ -35,6 +35,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import { WorkflowGateway } from "@/lib/workflowGateway";
 
 const getId = () => `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
@@ -340,7 +341,16 @@ function DnDFlow() {
       setWorkflowLogs(prev => [...prev, { id: Date.now().toString() + Math.random(), message, type }]);
     };
 
-    addLog(`[INFO] 开始工作流执行，初始报文: ${globalHex.trim()}`, 'info');
+    let safePayload: string;
+    try {
+      safePayload = WorkflowGateway.beforeRun(globalHex);
+    } catch (e: any) {
+      addLog(`[ERROR] 网关安全拦截失败: ${e.message}`, 'error');
+      setIsWorkflowRunning(false);
+      return;
+    }
+
+    addLog(`[INFO] 开始工作流执行，已通过网关安全校验，清洗后报文: ${safePayload}`, 'info');
 
     // 1. 构建邻接表和入度表
     const adjList: Record<string, string[]> = {};
@@ -360,7 +370,7 @@ function DnDFlow() {
     currentNodes.forEach(n => inbox[n.id] = []);
 
     if (inbox["start-node"]) {
-      inbox["start-node"].push(globalHex.trim());
+      inbox["start-node"].push(safePayload);
     }
 
     let queue = currentNodes.filter(n => inDegree[n.id] === 0);
@@ -418,19 +428,26 @@ function DnDFlow() {
                 if (isTriggered) {
                   isMatched = true;
                   if (rule.api && rule.api !== 'none') {
-                    addLog(`[INFO] 传统节点命中规则：[${rule.field}] [${rule.operator}] [${rule.value}]，正在调用对应报警接口: [${rule.api}]...`, 'success');
-                    try {
-                      const url = rule.api.split(' ')[1] || rule.api;
-                      // Mock request execution for UI display purposes
-                      await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(mergedPayload)
-                      }).catch(e => {
-                        addLog(`[WARN] 调用 ${url} 遇到网络错误，已忽略: ${e.message}`, 'error');
-                      });
-                    } catch (e: any) {
-                      addLog(`[ERROR] 执行 HTTP 调用异常: ${e.message}`, 'error');
+                    const throttleKey = `${node.id}_${rule.id}`;
+                    const isThrottled = WorkflowGateway.checkThrottle(throttleKey, 10000); // 10秒冷却
+                    
+                    if (isThrottled) {
+                      addLog(`[INFO] 规则命中，但处于报警冷却期内，本次外部调用已收敛截流。`, 'info');
+                    } else {
+                      addLog(`[INFO] 传统节点命中规则：[${rule.field}] [${rule.operator}] [${rule.value}]，正在调用对应报警接口: [${rule.api}]...`, 'success');
+                      try {
+                        const url = rule.api.split(' ')[1] || rule.api;
+                        // Mock request execution for UI display purposes
+                        await fetch(url, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(mergedPayload)
+                        }).catch(e => {
+                          addLog(`[WARN] 调用 ${url} 遇到网络错误，已忽略: ${e.message}`, 'error');
+                        });
+                      } catch (e: any) {
+                        addLog(`[ERROR] 执行 HTTP 调用异常: ${e.message}`, 'error');
+                      }
                     }
                   } else {
                     addLog(`[INFO] 传统节点命中规则：[${rule.field}] [${rule.operator}] [${rule.value}]，正常结束，无调用。`, 'info');
@@ -479,7 +496,8 @@ function DnDFlow() {
           } else {
             setNodes(nds => nds.map(n => n.id === res.nodeId ? { ...n, data: { ...n.data, executionState: 'success' } } : n));
             if (res.nodeId === "end-node") {
-              addLog(`[SUCCESS] 接收到最终合并结果:\n${JSON.stringify(res.output, null, 2)}`, 'success');
+              const envelopedOutput = WorkflowGateway.afterRun(res.output);
+              addLog(`[SUCCESS] 接收到最终合并结果:\n${JSON.stringify(envelopedOutput, null, 2)}`, 'success');
             } else {
               // 分发结果给子节点
               const children = adjList[res.nodeId] || [];

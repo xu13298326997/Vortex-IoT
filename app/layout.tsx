@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "尝试AI开发工作流demo",
-  description: "这是正儿八经用AI生成的第一个React项目",
+  title: "Agent报文解析工作流",
+  description: "根据传入Hex报文，经过AIAgent对报文进行解析，提取关键信息，并根据配置的规则发送HTTP请求",
 };
 
 export default function RootLayout({

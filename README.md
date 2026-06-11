@@ -1,73 +1,100 @@
-# Clean Next.js 15 Template
+# AI Agent Studio 🔮
 
-这是一个最干净的 Next.js 15 项目模板，包含了 App Router、TypeScript 和 Tailwind CSS，并剔除了多余的样板代码和文件。
+> A Next-Generation Multimodal AI Agent Workflow Orchestration Platform
+> 
+> 下一代多模态 AI Agent 工作流编排与高频物联网执行平台
 
-## 如何运行
+![AI Agent Studio Cover](https://via.placeholder.com/1200x400?text=AI+Agent+Studio)
 
-由于当前环境尚未安装 Node.js，你需要先在你的系统上安装 [Node.js](https://nodejs.org/) (建议 Node 18.18.0 或更高版本)。
+## 🌟 Core Technical Highlights / 核心技术亮点
 
-安装完毕后，执行以下命令：
+### 1. LLM-Compiler Architecture (LLM-Compiler 动态编译架构)
+**EN**: Replaces traditional static hard-coded parsers. The LLM dynamically compiles execution code based on incoming instructions and protocols, generating secure sandbox JavaScript logic on the fly.
+**ZH**: 摒弃传统静态硬编码解析器，大模型根据传入指令与协议文档，动态实时编译并生成安全的沙箱 JavaScript 解析逻辑。
 
-```bash
-# 1. 安装依赖
-npm install
+### 2. Adaptive Multimodal Visual Code Gen (自适应多模态识图代码生成)
+**EN**: Directly upload equipment protocol manuals or architecture diagrams. The Vision-Language Model automatically understands the context and reverse-engineers the exact byte-parsing code required.
+**ZH**: 支持直接上传设备协议手册或架构截图，视觉语言大模型（VLM）自动理解上下文并逆向工程出完全准确的字节解析代码。
 
-# 2. 启动开发服务器
-npm run dev
+### 3. DAG Topology Serial/Parallel Engine (DAG 拓扑串行/并行执行引擎)
+**EN**: High-performance Directed Acyclic Graph execution engine. Automatically constructs adjacency lists, calculating node in-degrees to support complex parallel executions and data merging routing.
+**ZH**: 高性能有向无环图执行引擎。自动构建邻接表与入度计算，完美支撑复杂的多节点并行流转、数据等待与合并路由。
+
+### 4. High-frequency IoT Secure Gateway (高频物联网统一安全网关)
+**EN**: All incoming telemetry data passes through a unified `WorkflowGateway`. Provides robust payload sanitization (Hex filtering), circuit-breaker limits (4096 bytes), and outputs a Standard Envelope with graceful degradation for null/NaN values.
+**ZH**: 所有海量遥测数据流入统一 `WorkflowGateway`。提供坚固的报文清洗（Hex 严格过滤）、长度熔断断路器，并在出口输出统一的 Standard Envelope（空值与 NaN 优雅降级）。
+
+### 5. Alert Storm Throttle Mechanism (报警风暴收敛节流机制)
+**EN**: Prevents API exhaustion during high-frequency trigger events (e.g., 600 RPM). Implements an intelligent memory-based Debounce/Throttle system per node-rule, drastically reducing downstream notification floods.
+**ZH**: 防止在极高频触发事件下的 API 瘫痪。基于内存级别的节点规则防抖与节流系统，在特定冷却期内自动收敛重复报警，大幅削减下游系统的通知风暴。
+
+---
+
+## 🔌 MQTT IoT Long-Connection Example / MQTT 高频物联网长连接接入示例代码
+
+**EN**: Below is a complete Node.js example demonstrating how to subscribe to a factory topic via MQTT, safely filter the payload using our `WorkflowGateway`, and feed it into the execution engine.
+**ZH**: 以下是一段完整的 Node.js 示例，展示如何使用 `mqtt` 包长连接订阅工厂主题，接收报文后经过 `WorkflowGateway` 安全过滤，最后送入工作流执行引擎。
+
+### `mqtt-client-example.ts`
+
+```typescript
+import mqtt from 'mqtt';
+import { WorkflowGateway } from './lib/workflowGateway';
+// 假设这里是您的工作流引擎入口
+// import { executeWorkflowEngine } from './engine'; 
+
+const MQTT_BROKER_URL = 'mqtt://broker.emqx.io:1883';
+const FACTORY_TOPIC = 'factory/line1/sensor/telemetry';
+
+console.log(`[MQTT] 正在连接至 Broker: ${MQTT_BROKER_URL}...`);
+const client = mqtt.connect(MQTT_BROKER_URL);
+
+client.on('connect', () => {
+  console.log(`[MQTT] ✅ 连接成功!`);
+  client.subscribe(FACTORY_TOPIC, (err) => {
+    if (!err) {
+      console.log(`[MQTT] 📡 已订阅主题: ${FACTORY_TOPIC}`);
+    } else {
+      console.error(`[MQTT] ❌ 订阅失败:`, err);
+    }
+  });
+});
+
+client.on('message', async (topic, message) => {
+  const rawPayload = message.toString();
+  console.log(`\n[MQTT] 接收到新消息 (Topic: ${topic})`);
+  console.log(`[RAW] ${rawPayload}`);
+
+  try {
+    // 1. 前置安全拦截与过滤 (Before Run)
+    // 自动过滤非法字符并防止内存溢出攻击
+    const safePayload = WorkflowGateway.beforeRun(rawPayload);
+    console.log(`[GATEWAY] 校验通过，安全报文: ${safePayload}`);
+
+    // 2. 将安全报文送入 DAG 工作流执行引擎
+    // const rawResult = await executeWorkflowEngine(safePayload, currentWorkflowNodes);
+    
+    // 模拟工作流执行结果
+    const rawResult = { 
+      Temp: 85.5, 
+      Status: "Warning", 
+      ErrorCode: undefined // 将会被优雅降级处理
+    };
+
+    // 3. 后置统一格式化 (After Run)
+    // 处理空值并将数据装入统一信封 (Standard Envelope)
+    const finalResponse = WorkflowGateway.afterRun(rawResult);
+    
+    console.log(`[ENGINE] 工作流执行完毕，标准响应结果:`);
+    console.log(JSON.stringify(finalResponse, null, 2));
+
+  } catch (error: any) {
+    // 拦截到异常请求 (如恶意 Hex 注入或超长报文)
+    console.error(`[SECURITY BLOCK] 拦截异常: ${error.message}`);
+  }
+});
 ```
 
-在浏览器中打开 [http://localhost:3000](http://localhost:3000) 即可预览。
+---
 
-## Next.js 15：服务端组件与客户端组件边界
-
-在 Next.js 的 App Router (自 Next.js 13 引入并在 15 中进一步完善) 中，组件默认都是 **Server Components（服务端组件）**。理解服务端和客户端组件的边界对于构建高性能的 React 应用至关重要。
-
-### 服务端组件 (Server Components)
-
-**默认状态**：所有在 `app/` 目录下的组件（例如 `page.tsx`, `layout.tsx`）默认都是服务端组件。
-
-**特点**：
-- 在服务器端渲染，并将生成的 HTML 或特殊的 JSON 格式直接发送到客户端。
-- **无 JavaScript 捆绑**：服务端组件的代码（包括它们引入的大型依赖包）不会被发送到浏览器，大大减少了客户端的代码体积。
-- 可以直接访问后端资源（如数据库、文件系统等）。
-- **不支持** 任何与浏览器或状态相关的 API，比如 `useState`, `useEffect`, 浏览器 API (`window`, `document`) 或 DOM 事件监听器（`onClick`, `onChange` 等）。
-
-### 客户端组件 (Client Components)
-
-**如何声明**：在文件的最顶部（在任何 import 语句之前）添加 `"use client";` 指令。
-
-**特点**：
-- 在服务端会进行预渲染（SSR），在客户端会被注入 React 状态并使其具有交互性（Hydration）。
-- **支持** React 状态 (`useState`, `useReducer`), 生命周期钩子 (`useEffect`), 以及浏览器专属的 API。
-- 可以监听 DOM 事件（`onClick` 等）。
-
-### 边界划分规则
-
-1. **"use client" 划定边界**：当你在一个文件中定义 `"use client";` 时，你创建了一个从服务端到客户端的“边界”。**该组件及其导入的所有子组件都将成为客户端包的一部分**。
-2. **交错使用模式（Interleaving）**：
-   - ❌ **不允许**：在客户端组件内部直接导入（import）并渲染服务端组件。
-   - ✅ **允许（推荐模式）**：将服务端组件作为 `children` 或其他 `props` 传递给客户端组件。这样，服务端组件仍然会在服务器上渲染，客户端组件仅仅是作为一个“包装器（Wrapper）”来包裹它们。
-   
-   ```tsx
-   // 客户端组件 (ClientWrapper.tsx)
-   "use client";
-   export default function ClientWrapper({ children }) {
-     return <div onClick={() => console.log('Clicked!')}>{children}</div>;
-   }
-   
-   // 服务端组件 (ServerPage.tsx)
-   import ClientWrapper from './ClientWrapper';
-   import ServerComponent from './ServerComponent';
-
-   export default function Page() {
-     return (
-       <ClientWrapper>
-         <ServerComponent /> {/* 这依然在服务端渲染！*/}
-       </ClientWrapper>
-     );
-   }
-   ```
-
-### 最佳实践总结
-- 尽可能保持大部分组件为服务端组件（默认行为），仅在需要交互、状态管理或访问浏览器 API 时才使用客户端组件。
-- 把 `"use client"` 下推到组件树的叶子节点，避免将大型的纯展示组件不必要地打包到客户端中。
+*Powered by Next.js 15, React Flow, and Google DeepMind.*

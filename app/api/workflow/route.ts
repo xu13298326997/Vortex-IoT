@@ -4,12 +4,6 @@ import { prisma } from '@/lib/prisma';
 export async function GET() {
   try {
     const workflows = await prisma.workflow.findMany({
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        updatedAt: true
-      },
       orderBy: {
         updatedAt: 'desc'
       }

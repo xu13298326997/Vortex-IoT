@@ -6,7 +6,8 @@ const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 // 2.利用 process.cwd() 获取项目在 Vercel 运行时的绝对根目录
 // 无论 Vercel 的云端 Serverless 环境怎么飘，强行锁死数据库读取项目根目录下的 prisma/dev.db 文件
-const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
+// 兼容 Windows：将反斜杠替换为正斜杠，防止 Prisma URL 解析报错
+const dbPath = path.join(process.cwd(), 'prisma', 'dev.db').replace(/\\/g, '/');
 
 // 3. 初始化或复用 Prisma 实例
 export const prisma =

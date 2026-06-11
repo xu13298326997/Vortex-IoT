@@ -542,7 +542,7 @@ function DnDFlow() {
   }, [activeNode]);
 
   const handleGenerateAndTest = async () => {
-    if (!hexInput.trim() || isTestLoading) return;
+    if (isTestLoading) return;
 
     setIsTestLoading(true);
     setTestResult(null);
@@ -554,7 +554,7 @@ function DnDFlow() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: "请根据系统提示词中的协议内容，直接生成纯净的JavaScript解析代码。" }],
+          messages: [{ role: 'user', content: "请根据系统提示词中的协议内容，直接生成纯净的JavaScript解析代码。注意：如果传入的 payload 为空字符串、未定义或 null，请直接返回包含协议中所有规定字段的JSON对象，对应的值赋予缺省默认值(如0或\"\")；如果有实际的报文内容，则解析出具体的值填入。" }],
           systemPrompt,
           modelName,
         })
@@ -599,7 +599,7 @@ function DnDFlow() {
   };
 
   const handleRunLocalOnly = () => {
-    if (!hexInput.trim() || !localGeneratedCode) return;
+    if (!localGeneratedCode) return;
     try {
       setTestResult(null);
       const executableCode = `
@@ -1099,7 +1099,7 @@ function DnDFlow() {
                         <button
                           type="button"
                           onClick={handleGenerateAndTest}
-                          disabled={isTestLoading || !hexInput.trim() || !systemPrompt.trim()}
+                          disabled={isTestLoading || !systemPrompt.trim()}
                           className="bg-purple-600/90 hover:bg-purple-500 text-white px-3 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 text-xs font-medium"
                           title="让AI生成代码并测试"
                         >
@@ -1108,7 +1108,7 @@ function DnDFlow() {
                         <button
                           type="button"
                           onClick={handleRunLocalOnly}
-                          disabled={isTestLoading || !hexInput.trim() || !localGeneratedCode}
+                          disabled={isTestLoading || !localGeneratedCode}
                           className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 text-xs font-medium"
                           title="直接运行已有代码"
                         >

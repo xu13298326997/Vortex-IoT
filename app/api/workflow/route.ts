@@ -29,8 +29,8 @@ export async function POST(req: Request) {
           where: { id },
           data: {
             name: name || existing.name,
-            nodes: JSON.stringify(nodes),
-            edges: JSON.stringify(edges)
+            nodes: JSON.stringify(nodes || []),
+            edges: JSON.stringify(edges || [])
           }
         });
         return NextResponse.json({ success: true, workflow });
@@ -41,8 +41,8 @@ export async function POST(req: Request) {
     const workflow = await prisma.workflow.create({
       data: {
         name: name || '未命名工作流',
-        nodes: JSON.stringify(nodes),
-        edges: JSON.stringify(edges)
+        nodes: JSON.stringify(nodes || []),
+        edges: JSON.stringify(edges || [])
       }
     });
     

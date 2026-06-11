@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import AgentCanvas from "@/components/AgentCanvas";
 import DevicesMonitor from "@/components/DevicesMonitor";
-import { Bot, Workflow, Plus, Search, Bell, FileCode2, Activity } from "lucide-react";
+import { Bot, Workflow, Plus, Search, Bell, FileCode2, Activity, Trash2 } from "lucide-react";
 
 export default function Home() {
   const [workflows, setWorkflows] = useState<any[]>([]);
@@ -36,6 +36,27 @@ export default function Home() {
     setActiveWorkflowId(id);
     window.dispatchEvent(new CustomEvent('load-workflow', { detail: id }));
   };
+
+  const handleDeleteWorkflow = async (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    if (confirm(`⚠️ 确定要永久删除工作流【${name}】吗？\n此操作不可恢复！`)) {
+      try {
+        const res = await fetch(`/api/workflow/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          if (activeWorkflowId === id) {
+            handleSelectWorkflow(null);
+          }
+          fetchWorkflows();
+        } else {
+          alert('删除失败，请稍后重试');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('删除失败，服务器异常');
+      }
+    }
+  };
+
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-50 font-sans overflow-hidden">
       {/* 侧边栏 */}
@@ -79,18 +100,26 @@ export default function Home() {
               
               <div className="space-y-1">
                 {workflows.map(wf => (
-                  <button
-                    key={wf.id}
-                    onClick={() => handleSelectWorkflow(wf.id)}
-                    className={`flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
-                      activeWorkflowId === wf.id 
-                        ? 'bg-blue-500/10 text-blue-400 font-medium' 
-                        : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'
-                    }`}
-                  >
-                    <FileCode2 className="w-4 h-4 flex-shrink-0" />
-                    <span className="truncate">{wf.name}</span>
-                  </button>
+                  <div key={wf.id} className="relative group">
+                    <button
+                      onClick={() => handleSelectWorkflow(wf.id)}
+                      className={`flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors pr-10 ${
+                        activeWorkflowId === wf.id 
+                          ? 'bg-blue-500/10 text-blue-400 font-medium' 
+                          : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'
+                      }`}
+                    >
+                      <FileCode2 className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{wf.name}</span>
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteWorkflow(e, wf.id, wf.name)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all rounded-md hover:bg-rose-500/10"
+                      title="删除工作流"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 ))}
                 {workflows.length === 0 && (
                   <div className="px-3 py-2 text-xs text-zinc-600 text-center">暂无保存的工作流</div>

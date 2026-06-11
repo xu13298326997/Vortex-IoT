@@ -15,9 +15,9 @@
     "@xyflow/react": "latest",
     "ai": "latest",
     "lucide-react": "latest",
-    "next": "15.0.0",
-    "react": "19.0.0-rc-65a56d0e-20241020",
-    "react-dom": "19.0.0-rc-65a56d0e-20241020",
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "zod": "latest"
   },
   "devDependencies": {

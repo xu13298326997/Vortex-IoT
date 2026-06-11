@@ -4,7 +4,7 @@
 > 
 > 下一代多模态 AI Agent 工作流编排与高频物联网执行平台
 
-![AI Agent Studio Cover](https://via.placeholder.com/1200x400?text=AI+Agent+Studio)
+![AI Agent Studio Cover](https://vortex-io-t.vercel.app/)
 
 ## 🌟 Core Technical Highlights / 核心技术亮点
 
@@ -98,3 +98,4 @@ client.on('message', async (topic, message) => {
 ---
 
 *Powered by Next.js 15, React Flow, and Google DeepMind.*
+

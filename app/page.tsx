@@ -64,36 +64,40 @@ export default function Home() {
             <span>设备资产监测 (Monitor)</span>
           </button>
 
-          <div className="mt-8 mb-2 px-2 flex items-center justify-between">
-            <div className="text-xs font-semibold text-zinc-500 tracking-wider">已保存工作流</div>
-            <button 
-              onClick={() => handleSelectWorkflow(null)}
-              className="text-zinc-400 hover:text-emerald-400 transition-colors"
-              title="新建工作流"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-          
-          <div className="space-y-1">
-            {workflows.map(wf => (
-              <button
-                key={wf.id}
-                onClick={() => handleSelectWorkflow(wf.id)}
-                className={`flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
-                  activeWorkflowId === wf.id 
-                    ? 'bg-blue-500/10 text-blue-400 font-medium' 
-                    : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'
-                }`}
-              >
-                <FileCode2 className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{wf.name}</span>
-              </button>
-            ))}
-            {workflows.length === 0 && (
-              <div className="px-3 py-2 text-xs text-zinc-600 text-center">暂无保存的工作流</div>
-            )}
-          </div>
+          {activeTab === 'workflow' && (
+            <>
+              <div className="mt-8 mb-2 px-2 flex items-center justify-between">
+                <div className="text-xs font-semibold text-zinc-500 tracking-wider">已保存工作流</div>
+                <button 
+                  onClick={() => handleSelectWorkflow(null)}
+                  className="text-zinc-400 hover:text-emerald-400 transition-colors"
+                  title="新建工作流"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="space-y-1">
+                {workflows.map(wf => (
+                  <button
+                    key={wf.id}
+                    onClick={() => handleSelectWorkflow(wf.id)}
+                    className={`flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
+                      activeWorkflowId === wf.id 
+                        ? 'bg-blue-500/10 text-blue-400 font-medium' 
+                        : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'
+                    }`}
+                  >
+                    <FileCode2 className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">{wf.name}</span>
+                  </button>
+                ))}
+                {workflows.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-zinc-600 text-center">暂无保存的工作流</div>
+                )}
+              </div>
+            </>
+          )}
         </nav>
 
         <div className="p-4 border-t border-zinc-800/60">

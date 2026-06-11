@@ -50,6 +50,12 @@ export default function DevicesMonitor({ workflows }: { workflows: any[] }) {
 
   const startSimulation = () => {
     if (isSimulating) return;
+    
+    if (!deviceWorkflows[activeDeviceId]) {
+      addLog(`[SYSTEM] 🚫 启动失败: 请先在左侧为当前选中的设备绑定一个解析工作流！`, 'error');
+      return;
+    }
+
     setIsSimulating(true);
     addLog(`[SYSTEM] 启动高频 MQTT 数据流模拟 (每 800ms)`, 'info');
 
@@ -269,9 +275,14 @@ export default function DevicesMonitor({ workflows }: { workflows: any[] }) {
             {!isSimulating ? (
               <button 
                 onClick={startSimulation}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)] active:scale-95"
+                disabled={!deviceWorkflows[activeDeviceId]}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all active:scale-95 ${
+                  deviceWorkflows[activeDeviceId] 
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]' 
+                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
+                }`}
               >
-                <Play className="w-4 h-4 fill-current" />
+                <Play className={`w-4 h-4 ${deviceWorkflows[activeDeviceId] ? 'fill-current' : ''}`} />
                 启动 MQTT 模拟数据流
               </button>
             ) : (
